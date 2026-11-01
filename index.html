@@ -93,6 +93,18 @@ h1,h2,h3,.baloo{font-family:'Baloo 2',cursive}
 .date .full{color:#e63946!important}
 #slotInfo{margin:8px 0 0}
 
+/* BOX */
+.boxes{display:grid;gap:8px;margin-top:10px}
+.boxrow{display:flex;align-items:center;gap:12px;border:2px solid var(--line);border-radius:14px;padding:10px 12px;background:#fff;transition:.2s}
+.boxrow.has{border-color:var(--pink);background:var(--pink-soft)}
+.boxrow .sz{width:46px;height:46px;border-radius:12px;background:var(--pink);color:#fff;display:grid;place-items:center;font:800 1.05rem 'Baloo 2';flex-shrink:0}
+.boxrow .bi{flex:1;min-width:0}
+.boxrow .bi b{font-family:'Baloo 2';font-size:1.05rem}
+.boxrow .bi small{display:block;color:var(--muted);font-size:.8rem}
+.boxrow .rec{display:inline-block;background:var(--mint);color:#fff;font-size:.62rem;font-weight:800;padding:1px 7px;border-radius:10px;margin-left:5px;vertical-align:middle}
+.boxrow .qty{margin:0;flex-shrink:0}
+.boxrow .qty span{min-width:26px;text-align:center}
+
 label{display:block;font-weight:700;font-size:.88rem;margin:14px 0 6px}
 input,textarea{width:100%;border:2px solid var(--line);border-radius:14px;padding:12px 14px;font:600 1rem 'Nunito';color:var(--ink);background:#fffdfb;outline:none;transition:.2s}
 input:focus,textarea:focus{border-color:var(--pink)}
@@ -163,7 +175,7 @@ input:focus,textarea:focus{border-color:var(--pink)}
       <div class="row"><span id="progTxt">0 / 0 batang</span><span id="progLeft"></span></div>
       <div class="bar" id="bar"><i></i></div>
       <div class="step-size">Tambah setiap tekan:
-        <button data-s="1">1</button><button data-s="5" class="sel">5</button><button data-s="10">10</button>
+        <button data-s="5" class="sel">5</button><button data-s="10">10</button>
       </div>
       <div class="tools">
         <button id="btnEven">✨ Agih Sama Rata</button>
@@ -199,6 +211,18 @@ input:focus,textarea:focus{border-color:var(--pink)}
       <div class="seg" id="seg">
         <button data-v="Ambil Sendiri" class="sel">🛍️ Ambil Sendiri</button>
         <button data-v="Penghantaran">🛵 Hantar</button>
+      </div>
+      <div id="delivNote" style="display:none;margin-top:10px;background:#fff8e1;border:2px solid #ffe08a;border-radius:12px;padding:10px 12px;font-size:.88rem;font-weight:700;color:#6b4e00">
+        🛵 Harga penghantaran bergantung kepada rate <b>Lalamove / Grab</b> dan akan diberitahu oleh admin.
+      </div>
+      <label>Nak Box?</label>
+      <div class="seg" id="boxSeg">
+        <button data-v="0" class="sel">🙅 Tak Perlu</button>
+        <button data-v="1">📦 Nak Box</button>
+      </div>
+      <div id="boxWrap" style="display:none">
+        <p class="sub" style="margin:10px 0 0">Pilih saiz dan bilangan box. Boleh campur saiz.</p>
+        <div class="boxes" id="boxes"></div>
       </div>
       <div id="addrBox" style="display:none">
         <label for="fAddr">Alamat Penghantaran</label>
@@ -245,6 +269,12 @@ const CONFIG = {
   slots: ["10:00 pagi","12:00 tgh","2:00 ptg","4:00 ptg","6:00 ptg","8:00 mlm"],
   sheetUrl: "https://script.google.com/macros/s/AKfycbwHYQDC2NE3clb2BhCRQmMCvAxOCD5vGTAGR2PM0ducPzojDSVKjxUXRStM-Va8hzqZsw/exec"                  // tampal URL Web App Google Apps Script di sini
 };
+const BOXES = [
+  {id:"XS", price:8,  desc:"Kurang dari 50 batang",  max:49},
+  {id:"S",  price:10, desc:"150 batang ke bawah",    max:150},
+  {id:"M",  price:12, desc:"200 batang ke bawah",    max:200},
+  {id:"L",  price:15, desc:"300 batang ke bawah",    max:300}
+];
 const PACKAGES = [
   {id:"A", sticks:50,  color:"#3cc4b4"},
   {id:"B", sticks:100, color:"#ff8a5c", tag:"Popular"},
@@ -275,6 +305,12 @@ const state = {step:0, pkg:null, qty:{}, inc:5, date:null, slot:null, method:"Am
 const isFull  = (d,s) => ((state.booked[d]||{})[s]||0) >= state.capacity;
 const dayFull = d => CONFIG.slots.every(s => isFull(d,s));
 FLAVOURS.forEach(f => state.qty[f.n] = 0);
+state.wantBox = false; state.box = {}; BOXES.forEach(b => state.box[b.id] = 0);
+const boxCount = () => BOXES.reduce((a,b)=>a+state.box[b.id],0);
+const boxTotal = () => state.wantBox ? BOXES.reduce((a,b)=>a+state.box[b.id]*b.price,0) : 0;
+const boxText  = () => BOXES.filter(b=>state.box[b.id]>0).map(b=>`${b.id}×${state.box[b.id]}`).join(", ");
+const iceTotal = () => state.pkg ? state.pkg.sticks*CONFIG.pricePerStick : 0;
+const grandTotal = () => iceTotal() + boxTotal();
 
 function stick(c, d, h=62){
   const dots = d ? `<circle cx="14" cy="16" r="2.2" fill="${d}"/><circle cx="24" cy="24" r="2.2" fill="${d}"/><circle cx="15" cy="32" r="2.2" fill="${d}"/><circle cx="25" cy="12" r="2" fill="${d}"/>` : "";
@@ -385,7 +421,34 @@ $("#slots").onclick = e => { const b=e.target.closest(".slot"); if(!b) return; s
 $("#seg").onclick = e => {
   const b=e.target.closest("button"); if(!b) return; state.method=b.dataset.v;
   document.querySelectorAll("#seg button").forEach(x=>x.classList.toggle("sel",x===b));
-  $("#addrBox").style.display = state.method==="Penghantaran" ? "block" : "none"; update();
+  $("#addrBox").style.display = state.method==="Penghantaran" ? "block" : "none";
+  $("#delivNote").style.display = state.method==="Penghantaran" ? "block" : "none"; update();
+};
+function renderBoxes(){
+  const rec = state.pkg ? (BOXES.find(b=>state.pkg.sticks<=b.max)||{}).id : null;
+  $("#boxes").innerHTML = BOXES.map(b=>{
+    const q = state.box[b.id];
+    return `<div class="boxrow ${q?'has':''}">
+      <div class="sz">${b.id}</div>
+      <div class="bi"><b>Box ${b.id} · RM${b.price}</b>${b.id===rec?'<span class="rec">Sesuai untuk pakej anda</span>':''}<small>${b.desc}</small></div>
+      <div class="qty"><button data-b="${b.id}" data-d="-1" aria-label="Kurang box ${b.id}">−</button><span>${q}</span><button data-b="${b.id}" data-d="1" aria-label="Tambah box ${b.id}">+</button></div>
+    </div>`}).join("");
+}
+$("#boxSeg").onclick = e => {
+  const b=e.target.closest("button"); if(!b) return;
+  state.wantBox = b.dataset.v==="1";
+  document.querySelectorAll("#boxSeg button").forEach(x=>x.classList.toggle("sel",x===b));
+  $("#boxWrap").style.display = state.wantBox ? "block" : "none";
+  if(state.wantBox && !boxCount()){
+    const rec = BOXES.find(x=>state.pkg && state.pkg.sticks<=x.max);
+    if(rec) state.box[rec.id] = 1;
+  }
+  renderBoxes(); update();
+};
+$("#boxes").onclick = e => {
+  const b=e.target.closest("button[data-b]"); if(!b) return;
+  const id=b.dataset.b; state.box[id] = Math.max(0, Math.min(99, state.box[id] + (+b.dataset.d)));
+  renderBoxes(); update();
 };
 const phoneOk = () => /^0?1\d{7,9}$|^60\d{9,10}$/.test($("#fPhone").value.replace(/[\s-]/g,""));
 
@@ -404,7 +467,11 @@ function renderSummary(){
     <div class="sum-row"><span>Pakej</span><b>Pakej ${state.pkg.id} (${state.pkg.sticks} batang)</b></div>
     <div class="chips">${items.map(f=>`<div class="chip" style="--c:${f.c}"><i></i>${f.n} × ${state.qty[f.n]}</div>`).join("")}</div>
     ${$("#fNote").value?`<div class="sum-row" style="border:none"><span>Catatan</span><b>${esc($("#fNote").value)}</b></div>`:""}
-    <div class="total"><span>Jumlah Bayaran</span><b>${RM(state.pkg.sticks*CONFIG.pricePerStick)}</b></div>`;
+    <div class="sum-row" style="margin-top:8px"><span>Aiskrim (${state.pkg.sticks} batang)</span><b>${RM(iceTotal())}</b></div>
+    ${state.wantBox?BOXES.filter(b=>state.box[b.id]>0).map(b=>`<div class="sum-row"><span>Box ${b.id} × ${state.box[b.id]}</span><b>${RM(b.price*state.box[b.id])}</b></div>`).join(""):`<div class="sum-row"><span>Box</span><b>Tak perlu</b></div>`}
+    ${state.method==="Penghantaran"?`<div class="sum-row"><span>Penghantaran</span><b>Ikut rate Lalamove/Grab*</b></div>`:""}
+    <div class="total"><span>Jumlah Bayaran${state.method==="Penghantaran"?"<br><small style=\"font-size:.72rem;opacity:.9\">belum termasuk penghantaran</small>":""}</span><b>${RM(grandTotal())}</b></div>
+    ${state.method==="Penghantaran"?`<p class="sub" style="margin:10px 0 0;font-size:.82rem">* Harga penghantaran akan diberitahu oleh admin.</p>`:""}`;
 }
 const esc = s => s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
@@ -414,7 +481,7 @@ function canNext(){
     case 0: return !!state.pkg;
     case 1: return total()===target();
     case 2: return !!state.date && !!state.slot;
-    case 3: return $("#fName").value.trim().length>1 && phoneOk() && (state.method!=="Penghantaran" || $("#fAddr").value.trim().length>5);
+    case 3: return $("#fName").value.trim().length>1 && phoneOk() && (state.method!=="Penghantaran" || $("#fAddr").value.trim().length>5) && (!state.wantBox || boxCount()>0);
     case 4: return true;
   } return false;
 }
@@ -429,7 +496,7 @@ function go(s){
   state.step=s;
   document.querySelectorAll(".page").forEach(p=>p.classList.toggle("active",+p.dataset.step===s));
   document.querySelectorAll("#steps div").forEach((d,i)=>d.classList.toggle("on",i<=Math.min(s,4)));
-  if(s===1) renderFlavs(); if(s===2){ renderDates(); loadBooked(); } if(s===4) renderSummary();
+  if(s===1) renderFlavs(); if(s===2){ renderDates(); loadBooked(); } if(s===3) renderBoxes(); if(s===4) renderSummary();
   update(); window.scrollTo({top:0,behavior:"smooth"});
 }
 $("#btnBack").onclick = ()=>go(state.step-1);
@@ -446,7 +513,9 @@ async function confirmOrder(){
   lastOrder = {
     id, created:new Date().toISOString(), name:$("#fName").value.trim(), phone:$("#fPhone").value.trim(),
     date:state.date, slot:state.slot, method:state.method, address:$("#fAddr").value.trim(), note:$("#fNote").value.trim(),
-    package:state.pkg.id, sticks:state.pkg.sticks, total:state.pkg.sticks*CONFIG.pricePerStick,
+    pkgId:state.pkg.id, boxText:(state.wantBox && boxCount()) ? boxText() : "", boxTotal:boxTotal(),
+    package:state.pkg.id + ((state.wantBox && boxCount()) ? " + Box " + boxText() : ""),
+    sticks:state.pkg.sticks, total:grandTotal(),
     flavours:Object.fromEntries(Object.entries(state.qty).filter(([,v])=>v>0))
   };
   if(CONFIG.sheetUrl){
@@ -470,10 +539,12 @@ function sendWA(){
     `🍦 *TEMPAHAN ${CONFIG.shopName.toUpperCase()}*`, `No: *${o.id}*`, ``,
     `👤 ${o.name}`, `📞 ${o.phone}`, `📅 ${fmtDate(o.date)}`, `⏰ ${o.slot}`, `🛍️ ${o.method}`,
     ...(o.address?[`📍 ${o.address}`]:[]), ``,
-    `*Pakej ${o.package} – ${o.sticks} batang*`,
+    `*Pakej ${o.pkgId} – ${o.sticks} batang*`,
+    ...(o.boxText?[`📦 Box: ${o.boxText} (${RM(o.boxTotal)})`]:[`📦 Box: Tak perlu`]),
     ...Object.entries(o.flavours).map(([k,v])=>`• ${k}: ${v}`), ``,
     ...(o.note?[`📝 ${o.note}`,``]:[]),
-    `💰 *Jumlah: ${RM(o.total)}*`
+    `💰 *Jumlah: ${RM(o.total)}*`,
+    ...(o.method==="Penghantaran"?[`🛵 Caj penghantaran ikut rate Lalamove/Grab (admin akan maklumkan)`]:[])
   ];
   window.open(`https://wa.me/${CONFIG.whatsapp}?text=${encodeURIComponent(lines.join("\n"))}`,"_blank");
 }
